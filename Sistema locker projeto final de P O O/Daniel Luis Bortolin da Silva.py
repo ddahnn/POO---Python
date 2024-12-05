@@ -1,0 +1,287 @@
+import sqlite3
+from tkinter import *
+from tkinter import messagebox
+from tkinter import simpledialog
+from tkinter import Toplevel, ttk
+import traceback
+
+# Classe que representa o sistema de armários com integração ao banco de dados.
+class SistemaArmarios:
+    """
+    Sistema de gerenciamento de armários com integração ao banco de dados SQLite.
+    Permite criar, excluir e associar armários e usuários.
+    """
+    def __init__(self):
+        """Inicializa a conexão com o banco de dados e cria as tabelas, se necessário."""
+        self.conexao = sqlite3.connect("sistema_armarios.db")
+        self.cursor = self.conexao.cursor()
+        self.criar_tabelas()
+
+    def criar_tabelas(self):
+        """Cria as tabelas 'usuarios' e 'armarios' no banco de dados, se elas não existirem."""
+        try:
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS usuarios (
+                    id_usuario TEXT PRIMARY KEY,
+                    nome TEXT NOT NULL
+                )
+            """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS armarios (
+                    id_armario TEXT PRIMARY KEY,
+                    ocupado BOOLEAN NOT NULL,
+                    id_usuario TEXT,
+                    FOREIGN KEY (id_usuario) REFERENCES usuarios (id_usuario)
+                )
+            """)
+            self.conexao.commit()
+        except Exception as e:
+            print("Erro ao criar tabelas:")
+            traceback.print_exc()
+
+    def criar_armario(self, id_armario):
+        """
+        Adiciona um novo armário ao sistema.
+        :param id_armario: ID único do armário.
+        :return: True se o armário foi adicionado com sucesso, False se já existir.
+        """
+        try:
+            self.cursor.execute(
+                "INSERT INTO armarios (id_armario, ocupado, id_usuario) VALUES (?, ?, ?)",
+                (id_armario, False, None)
+            )
+            self.conexao.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def excluir_armario(self, id_armario):
+        """
+        Remove um armário do sistema.
+        parametro id_armario: ID do armário a ser excluído.
+        return: True se o armário foi excluído, False se não foi encontrado.
+        """
+        self.cursor.execute("DELETE FROM armarios WHERE id_armario = ?", (id_armario,))
+        self.conexao.commit()
+        return self.cursor.rowcount > 0
+
+    def adicionar_usuario(self, id_usuario, nome):
+        """
+        Adiciona um novo usuário ao sistema.
+        :param id_usuario: ID único do usuário.
+        :param nome: Nome do usuário.
+        :return: True se o usuário foi adicionado com sucesso, False se já existir.
+        """
+        try:
+            self.cursor.execute(
+                "INSERT INTO usuarios (id_usuario, nome) VALUES (?, ?)",
+                (id_usuario, nome)
+            )
+            self.conexao.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def excluir_usuario(self, id_usuario):
+        """
+        Remove um usuário do sistema.
+        :param id_usuario: ID do usuário a ser excluído.
+        :return: True se o usuário foi excluído, False se não foi encontrado.
+        """
+        self.cursor.execute("DELETE FROM usuarios WHERE id_usuario = ?", (id_usuario,))
+        self.conexao.commit()
+        return self.cursor.rowcount > 0
+
+    def associar_usuario_armario(self, id_usuario, id_armario):
+        """
+        Associa um usuário a um armário.
+        :param id_usuario: ID do usuário.
+        :param id_armario: ID do armário.
+        :return: True se a associação foi realizada com sucesso, False caso contrário.
+        """
+        self.cursor.execute("SELECT ocupado FROM armarios WHERE id_armario = ?", (id_armario,))
+        resultado = self.cursor.fetchone()
+        if resultado and not resultado[0]:
+            self.cursor.execute(
+                "UPDATE armarios SET ocupado = ?, id_usuario = ? WHERE id_armario = ?",
+                (True, id_usuario, id_armario)
+            )
+            self.conexao.commit()
+            return True
+        return False
+
+    def liberar_armario(self, id_armario):
+        """
+        Libera um armário, removendo qualquer associação de usuário.
+        :param id_armario: ID do armário a ser liberado.
+        :return: True se o armário foi liberado, False caso contrário.
+        """
+        self.cursor.execute(
+            "UPDATE armarios SET ocupado = ?, id_usuario = ? WHERE id_armario = ?",
+            (False, None, id_armario)
+        )
+        self.conexao.commit()
+        return self.cursor.rowcount > 0
+
+    def consultar_dados(self, tabela):
+        """
+        Consulta os dados de uma tabela específica.
+        :param tabela: Nome da tabela a ser consultada ('usuarios' ou 'armarios').
+        :return: Lista de registros encontrados na tabela.
+        """
+        self.cursor.execute(f"SELECT * FROM {tabela}")
+        return self.cursor.fetchall()
+
+
+# Classe da interface gráfica.
+class Interface:
+    """
+    Interface gráfica do sistema de gerenciamento de armários.
+    Utiliza tkinter para interação com o usuário.
+    """
+    def __init__(self):
+        """Inicializa a interface gráfica e cria os botões de interação."""
+        self.sistema = SistemaArmarios()
+        self.janela = Tk()
+        self.janela.title("Sistema de Armários")
+        self.janela.geometry("800x600")
+
+        # Cria uma área para os botões.
+        self.frame_botoes = Frame(self.janela)
+        self.frame_botoes.pack(pady=20)
+
+        # Adiciona botões ao frame.
+        Button(self.frame_botoes, text="Adicionar Armário", command=self.adicionar_armario, width=25).grid(row=0, column=0, padx=10, pady=5)
+        Button(self.frame_botoes, text="Excluir Armário", command=self.excluir_armario, width=25).grid(row=1, column=0, padx=10, pady=5)
+        Button(self.frame_botoes, text="Adicionar Usuário", command=self.adicionar_usuario, width=25).grid(row=0, column=1, padx=10, pady=5)
+        Button(self.frame_botoes, text="Excluir Usuário", command=self.excluir_usuario, width=25).grid(row=1, column=1, padx=10, pady=5)
+        Button(self.frame_botoes, text="Associar Armário e Usuário", command=self.associar_armario_usuario, width=25).grid(row=2, column=0, padx=10, pady=5)
+        Button(self.frame_botoes, text="Liberar Armário", command=self.liberar_armario, width=25).grid(row=2, column=1, padx=10, pady=5)
+        Button(self.frame_botoes, text="Visualizar Dados", command=self.visualizar_dados, width=25).grid(row=3, column=0, columnspan=2, pady=10)
+        Button(self.frame_botoes, text="Sair", command=self.sair, width=25).grid(row=4, column=0, columnspan=2, pady=10)
+
+    def entrada_popup(self, mensagem):
+        """
+        Exibe uma janela popup para entrada de dados.
+        :param mensagem: Mensagem de instrução exibida no popup.
+        :return: Texto digitado pelo usuário.
+        """
+        return simpledialog.askstring("Entrada", mensagem)
+
+    def mensagem_popup(self, titulo, mensagem, erro=False):
+        """
+        Exibe uma janela popup com uma mensagem.
+        :param titulo: Título da janela.
+        :param mensagem: Texto da mensagem.
+        :param erro: True para exibir uma mensagem de erro, False para uma mensagem informativa.
+        """
+        if erro:
+            messagebox.showerror(titulo, mensagem)
+        else:
+            messagebox.showinfo(titulo, mensagem)
+
+    def adicionar_armario(self):
+        """Adiciona um novo armário ao sistema."""
+        id_armario = self.entrada_popup("Digite o ID do Armário:")
+        if id_armario and self.sistema.criar_armario(id_armario):
+            self.mensagem_popup("Sucesso", "Armário adicionado com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "ID do armário já existe.", erro=True)
+
+    def excluir_armario(self):
+        """Exclui um armário existente no sistema."""
+        id_armario = self.entrada_popup("Digite o ID do Armário a ser excluído:")
+        if id_armario and self.sistema.excluir_armario(id_armario):
+            self.mensagem_popup("Sucesso", "Armário excluído com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "Armário não encontrado.", erro=True)
+
+    def adicionar_usuario(self):
+        """Adiciona um novo usuário ao sistema."""
+        id_usuario = self.entrada_popup("Digite o ID do Usuário:")
+        nome = self.entrada_popup("Digite o nome do Usuário:")
+        if id_usuario and nome and self.sistema.adicionar_usuario(id_usuario, nome):
+            self.mensagem_popup("Sucesso", "Usuário adicionado com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "ID do usuário já existe.", erro=True)
+
+    def excluir_usuario(self):
+        """Exclui um usuário existente no sistema."""
+        id_usuario = self.entrada_popup("Digite o ID do Usuário a ser excluído:")
+        if id_usuario and self.sistema.excluir_usuario(id_usuario):
+            self.mensagem_popup("Sucesso", "Usuário excluído com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "Usuário não encontrado.", erro=True)
+
+    def associar_armario_usuario(self):
+        """Associa um usuário a um armário disponível."""
+        id_usuario = self.entrada_popup("Digite o ID do Usuário:")
+        id_armario = self.entrada_popup("Digite o ID do Armário:")
+        if id_usuario and id_armario and self.sistema.associar_usuario_armario(id_usuario, id_armario):
+            self.mensagem_popup("Sucesso", "Usuário associado ao armário com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "Não foi possível associar. Verifique os IDs.", erro=True)
+
+    def liberar_armario(self):
+        """Libera um armário ocupado, removendo a associação com o usuário."""
+        id_armario = self.entrada_popup("Digite o ID do Armário a ser liberado:")
+        if id_armario and self.sistema.liberar_armario(id_armario):
+            self.mensagem_popup("Sucesso", "Armário liberado com sucesso.")
+        else:
+            self.mensagem_popup("Erro", "Armário não encontrado ou já está liberado.", erro=True)
+
+    def visualizar_dados(self):
+        """
+        Exibe os dados das tabelas 'usuarios' e 'armarios' em uma nova janela.
+        Permite alternar entre as tabelas com botões.
+        """
+        def exibir_tabela(tabela):
+            # Determina as colunas com base na tabela escolhida.
+            if tabela == "armarios":
+                colunas = ("ID Armário", "Ocupado", "ID Usuário")
+            elif tabela == "usuarios":
+                colunas = ("ID Usuário", "Nome")
+            else:
+                colunas = []
+
+            # Configura as colunas dinamicamente no Treeview.
+            tree["columns"] = colunas
+            for coluna in colunas:
+                tree.heading(coluna, text=coluna)
+                tree.column(coluna, width=100, anchor="center")
+
+            # Remove os dados antigos.
+            for linha in tree.get_children():
+                tree.delete(linha)
+
+            # Insere os novos dados.
+            dados = self.sistema.consultar_dados(tabela)
+            if tabela == "armarios":
+                dados = [
+                    (id_armario, "Sim" if ocupado else "Não", id_usuario if id_usuario else "Vazio")
+                    for id_armario, ocupado, id_usuario in dados
+                ]
+
+            for dado in dados:
+                tree.insert("", "end", values=dado)
+
+        janela_dados = Toplevel(self.janela)
+        janela_dados.title("Dados do Sistema")
+        janela_dados.geometry("600x400")
+
+        # Cria o Treeview.
+        tree = ttk.Treeview(janela_dados, show="headings")
+        tree.pack(fill=BOTH, expand=True)
+
+        # Botões para escolher qual tabela visualizar.
+        ttk.Button(janela_dados, text="Mostrar Armários", command=lambda: exibir_tabela("armarios")).pack(pady=5)
+        ttk.Button(janela_dados, text="Mostrar Usuários", command=lambda: exibir_tabela("usuarios")).pack(pady=5)
+
+    def sair(self):
+        """Fecha o programa."""
+        self.janela.quit()
+
+# Executa o sistema.
+if __name__ == "__main__":
+    interface = Interface()
+    interface.janela.mainloop()
